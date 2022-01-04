@@ -77,7 +77,8 @@ func (wsConn *sWSConnection) Close(errFromSys error, errFromProc error) {
 		if err := recover(); err != nil {
 			port := wsConn.GetPortObj()
 			if (port != nil) && (port.publisher != nil) {
-				log := flog.NewLog(flog.LOGLEVELError, "").AddPanicCallstack(0, ".(*sWSConnection).Close")
+				// log := flog.NewLog(flog.LOGLEVELError, "").AddPanicCallstack(0, ".(*sWSConnection).Close")
+				log := flog.NewLogPanic(flog.LOGLEVELError, ".(*sWSConnection).Close")
 				port.publisher.Publish(log.SetCaption("%s() 發生panic, %v", log.GetFunctionName(), err))
 			}
 		}

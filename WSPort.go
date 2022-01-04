@@ -174,7 +174,8 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 			// }
 
 			if port.publisher != nil {
-				log := flog.NewLog(flog.LOGLEVELError, "").AddPanicCallstack(0, FUNCNAME_RUN_AS_WE)
+				// log := flog.NewLog(flog.LOGLEVELError, "").AddPanicCallstack(0, FUNCNAME_RUN_AS_WE)
+				log := flog.NewLogPanic(flog.LOGLEVELError, FUNCNAME_RUN_AS_WE)
 				port.publisher.Publish(log.SetCaption("%s() 發生panic, %v", log.GetFunctionName(), err))
 			}
 			if tWSConn != nil {
