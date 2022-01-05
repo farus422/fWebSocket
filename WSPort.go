@@ -175,7 +175,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 
 			if port.publisher != nil {
 				// log := flog.NewLog(flog.LOGLEVELError, "").AddPanicCallstack(0, FUNCNAME_RUN_AS_WE)
-				log := flog.NewLogPanic(flog.LOGLEVELError, FUNCNAME_RUN_AS_WE, "")
+				log := flog.Panic(flog.LOGLEVELError, FUNCNAME_RUN_AS_WE, "")
 				port.publisher.Publish(log.SetCaption("%s() 發生panic, %v", log.GetFunctionName(), err))
 			}
 			if tWSConn != nil {
@@ -189,7 +189,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 	if err != nil {
 		// handle error
 		if port.publisher != nil {
-			port.publisher.Publish(flog.NewLog(flog.LOGLEVELError, "Upgrade fail: %v", err))
+			port.publisher.Publish(flog.Error("Upgrade fail: %v", err))
 		}
 		conn.Close()
 		peerwg.Done()
@@ -230,7 +230,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 				// handle error
 				if err == io.ErrUnexpectedEOF {
 					if port.publisher != nil {
-						port.publisher.Publish(flog.NewLog(flog.LOGLEVELError, "NextFrame() ErrUnexpectedEOF: %v", err))
+						port.publisher.Publish(flog.Error("NextFrame() ErrUnexpectedEOF: %v", err))
 					}
 					tWSConn.Close(err, nil)
 					return
@@ -254,7 +254,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 						switch err {
 						case io.ErrUnexpectedEOF:
 							if port.publisher != nil {
-								port.publisher.Publish(flog.NewLog(flog.LOGLEVELError, "reader.Read(msg) err : io.ErrUnexpectedEOF"))
+								port.publisher.Publish(flog.Error("reader.Read(msg) err : io.ErrUnexpectedEOF"))
 							}
 							tWSConn.Close(err, nil)
 							return
@@ -263,7 +263,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 						// 	msg[n] = 0
 						default:
 							if port.publisher != nil {
-								port.publisher.Publish(flog.NewLog(flog.LOGLEVELError, "reader.Read(msg) err : %v", err))
+								port.publisher.Publish(flog.Error("reader.Read(msg) err : %v", err))
 							}
 							tWSConn.Close(err, nil)
 							return
@@ -282,7 +282,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 						switch err {
 						case io.ErrUnexpectedEOF:
 							if port.publisher != nil {
-								port.publisher.Publish(flog.NewLog(flog.LOGLEVELError, "reader.Read(msg) err : io.ErrUnexpectedEOF"))
+								port.publisher.Publish(flog.Error("reader.Read(msg) err : io.ErrUnexpectedEOF"))
 							}
 							tWSConn.Close(err, nil)
 							return
@@ -290,7 +290,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 						// 	fmt.Printf("User%d Read EOF\n", myCount)
 						default:
 							if port.publisher != nil {
-								port.publisher.Publish(flog.NewLog(flog.LOGLEVELError, "reader.Read(msg) err : %v", err))
+								port.publisher.Publish(flog.Error("reader.Read(msg) err : %v", err))
 							}
 							tWSConn.Close(err, nil)
 							return
@@ -317,7 +317,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 					frame := ws.NewPongFrame(NilPayload)
 					if err := ws.WriteHeader(conn, frame.Header); err != nil {
 						if port.publisher != nil {
-							port.publisher.Publish(flog.NewLog(flog.LOGLEVELError, "ws.WriteHeader() err : %v", err))
+							port.publisher.Publish(flog.Error("ws.WriteHeader() err : %v", err))
 						}
 						tWSConn.Close(err, nil)
 						return
