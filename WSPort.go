@@ -32,15 +32,18 @@ type SWSPort struct {
 
 var NilPayload []byte = make([]byte, 1)
 
-func (port *SWSPort) ListenAndServe(addr string, fOnAccept FOnAccept) error {
+func (port *SWSPort) ListenAndServe(portNo int, fOnAccept FOnAccept) bool {
 	port.serverWG.Add(1)
 	if port.listener != nil {
 		port.Unlisten()
 	}
-	ln, listen_err := net.Listen("tcp", addr)
+	ln, listen_err := net.Listen("tcp", fmt.Sprintf(":%d", portNo))
 	if listen_err != nil {
+		if port.publisher != nil {
+			port.publisher.Publish(flog.Error("Failed to listen to port %d! err=%v", portNo, listen_err))
+		}
 		port.serverWG.Done()
-		return listen_err
+		return false
 	}
 	port.listener = ln
 
@@ -80,7 +83,7 @@ func (port *SWSPort) ListenAndServe(addr string, fOnAccept FOnAccept) error {
 			}
 		}
 	}()
-	return nil
+	return true
 }
 
 func (port *SWSPort) Unlisten() {
