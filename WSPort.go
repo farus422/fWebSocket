@@ -40,7 +40,7 @@ func (port *SWSPort) ListenAndServe(portNo int, fOnAccept FOnAccept) bool {
 	ln, listen_err := net.Listen("tcp", fmt.Sprintf(":%d", portNo))
 	if listen_err != nil {
 		if port.publisher != nil {
-			port.publisher.Publish(flog.Error("Failed to listen to port %d! err=%v", portNo, listen_err))
+			port.publisher.Publish(flog.Error("Failed to listen to port %d. err=%v", portNo, listen_err))
 		}
 		port.serverWG.Done()
 		return false
@@ -182,7 +182,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 				port.publisher.Publish(log.SetCaption("%s() 發生panic, %v", log.GetFunctionName(), err))
 			}
 			if tWSConn != nil {
-				tWSConn.Close(errors.New(fmt.Sprintf("find panic, error: %v", err)), nil)
+				tWSConn.Close(errors.New(fmt.Sprintf("Find panic. err=%v", err)), nil)
 			}
 
 			return
@@ -192,7 +192,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 	if err != nil {
 		// handle error
 		if port.publisher != nil {
-			port.publisher.Publish(flog.Error("Upgrade fail: %v", err))
+			port.publisher.Publish(flog.Debug("Websocket upgrade failed. err=%v", err))
 		}
 		conn.Close()
 		peerwg.Done()
