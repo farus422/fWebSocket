@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 
 	fcb "github.com/farus422/fCallstack"
 	flog "github.com/farus422/fLogSystem"
@@ -28,6 +29,8 @@ type SWSPort struct {
 	wsConnections map[uint64]IWSConnection
 	publisher     *flog.SPublisher
 	connCount     uint64
+	keepalive     time.Duration
+	timeout       int64
 }
 
 var NilPayload []byte = make([]byte, 1)
@@ -84,6 +87,63 @@ func (port *SWSPort) ListenAndServe(portNo int, fOnAccept FOnAccept) error {
 			}
 		}
 	}()
+
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		var currTime time.Time
+		var currMilli int64
+		var wsConn *sWSConnection
+		var wsConns []*sWSConnection
+		var err error
+		for {
+			select {
+			case _, ok := <-ticker.C: // 定時檢查
+				if !ok {
+					return
+				}
+				// GetConns()
+				port.mutex.Lock()
+				i := 0
+				wsConns = make([]*sWSConnection, len(port.wsConnections))
+				conns := port.wsConnections
+				for _, conn := range conns {
+					wsConns[i] = conn.(*sWSConnection)
+					i++
+				}
+				port.mutex.Unlock()
+
+				currTime = time.Now()
+				for _, wsConn = range wsConns {
+					err = nil
+					wsConn.mutex.Lock()
+					if wsConn.timeoutCheck > 0 {
+						currMilli = currTime.UnixMilli()
+						if currMilli > wsConn.timeoutCheck && currMilli-wsConn.timeoutCheck >= port.timeout {
+							err = errors.New("WebSocket: client timeout!!")
+							if port.publisher != nil {
+								port.publisher.Publish(flog.Error("WebSocket: client timeout!!"))
+							}
+						}
+					} else {
+						if currTime.After(wsConn.lastRecvTime) && currTime.Sub(wsConn.lastRecvTime) >= port.keepalive {
+							wsConn.timeoutCheck = wsConn.lastRecvTime.UnixMilli()
+							// 發送Ping
+							frame := ws.NewPongFrame(NilPayload)
+							if err = ws.WriteHeader(wsConn, frame.Header); err != nil {
+								if port.publisher != nil {
+									port.publisher.Publish(flog.Error("ws.WriteHeader() err : %v", err))
+								}
+							}
+						}
+					}
+					wsConn.mutex.Unlock()
+					if err != nil {
+						wsConn.Close(err, nil)
+					}
+				}
+			}
+		}
+	}()
 	return nil
 }
 
@@ -101,15 +161,23 @@ func (port *SWSPort) GetPublisher() *flog.SPublisher {
 
 type FWSSCANCALLBACK = func(IWSConnection) bool
 
-func (port *SWSPort) ScanConns(callback FWSSCANCALLBACK) {
+// keepalive: 單位(秒)
+// timeout:   單位(秒)
+func (port *SWSPort) SetTimeout(keepalive, timeout int64) {
+	port.keepalive = time.Second * time.Duration(keepalive)
+	port.timeout = timeout * 1000 // 秒 -> ms
+}
+
+func (port *SWSPort) GetConns() []IWSConnection {
+	i := 0
 	port.mutex.Lock()
-	conns := port.wsConnections
-	for _, conn := range conns {
-		if callback(conn) == false {
-			break
-		}
+	wsConns := make([]IWSConnection, len(port.wsConnections))
+	for _, conn := range port.wsConnections {
+		wsConns[i] = conn
+		i++
 	}
 	port.mutex.Unlock()
+	return wsConns
 }
 
 func (port *SWSPort) GetPeersAndLock() map[uint64]IWSConnection {
@@ -189,6 +257,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 			return
 		}
 	}()
+
 	_, err := u.Upgrade(conn)
 	if err != nil {
 		// handle error
@@ -207,7 +276,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 		)
 		tPeerID := port.connCount
 		port.connCount++
-		tWSConn = &sWSConnection{connection: conn, peerWG: peerwg, state: ws.StateServerSide, peerID: tPeerID, portObj: port, Reader: reader, sender: NewSender(conn), connState: Connected}
+		tWSConn = &sWSConnection{connection: conn, peerWG: peerwg, state: ws.StateServerSide, peerID: tPeerID, portObj: port, Reader: reader, sender: NewSender(conn), connState: Connected, lastRecvTime: time.Now()}
 		//ifEvenCallback := ifPort.OnAccept(&tPeer)
 		ifEvenCallback := fOnAccept(tWSConn)
 		if ifEvenCallback == nil {
@@ -246,6 +315,8 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 				return
 			}
 			if header.Fin {
+				tWSConn.timeoutCheck = 0
+				tWSConn.lastRecvTime = time.Now()
 				// 資料收完整才處理
 				switch header.OpCode {
 				case ws.OpBinary:
@@ -273,9 +344,11 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 							return
 						}
 					}
-					if ifEvenCallback != nil && header.Length > 0 {
+					// if header.Length > 0 {
+					if ifEvenCallback != nil && tWSConn.connState < Closing {
 						ifEvenCallback.OnRecv(tWSConn, msg[:n], header.Length, false)
 					}
+					// }
 				case ws.OpText:
 					//fmt.Printf("User%d Text data, Length = %d\n", myCount, header.Length)
 					// Reset writer to write frame with right operation code.
@@ -300,7 +373,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 							return
 						}
 					}
-					if ifEvenCallback != nil {
+					if ifEvenCallback != nil && tWSConn.connState < Closing {
 						ifEvenCallback.OnRecv(tWSConn, msg[:n], header.Length, true)
 					}
 				case ws.OpClose: // 收到遠端ws結束訊號
@@ -318,13 +391,15 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 					//writer.Reset(conn, state, header.OpCode) // 已經用不著了
 
 					// if ifEvenCallback == nil {
-					frame := ws.NewPongFrame(NilPayload)
-					if err := ws.WriteHeader(conn, frame.Header); err != nil {
-						if port.publisher != nil {
-							port.publisher.Publish(flog.Error("ws.WriteHeader() err : %v", err))
+					if tWSConn.connState < Closing {
+						frame := ws.NewPongFrame(NilPayload)
+						if err := ws.WriteHeader(conn, frame.Header); err != nil {
+							if port.publisher != nil {
+								port.publisher.Publish(flog.Error("ws.WriteHeader() err : %v", err))
+							}
+							tWSConn.Close(err, nil)
+							return
 						}
-						tWSConn.Close(err, nil)
-						return
 					}
 					// } else {
 					// 	ifEvenCallback.OnPing(tWSConn)
@@ -336,7 +411,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 }
 
 func NewPort(ctx context.Context, wg *sync.WaitGroup, publisher *flog.SPublisher) *SWSPort {
-	p := SWSPort{serverWG: wg, wsConnections: make(map[uint64]IWSConnection), publisher: publisher}
+	p := SWSPort{serverWG: wg, wsConnections: make(map[uint64]IWSConnection), publisher: publisher, keepalive: 30, timeout: 60}
 	p.ctx, p.cancel = context.WithCancel(ctx)
 	return &p
 }
