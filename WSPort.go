@@ -116,22 +116,24 @@ func (port *SWSPort) ListenAndServe(portNo int, fOnAccept FOnAccept) error {
 				for _, wsConn = range wsConns {
 					err = nil
 					wsConn.mutex.Lock()
-					if wsConn.timeoutCheck > 0 {
-						currMilli = currTime.UnixMilli()
-						if currMilli > wsConn.timeoutCheck && currMilli-wsConn.timeoutCheck >= port.timeout {
-							err = errors.New("WebSocket: client timeout!!")
-							if port.publisher != nil {
-								port.publisher.Publish(flog.Error("WebSocket: client timeout!!"))
-							}
-						}
-					} else {
-						if currTime.After(wsConn.lastRecvTime) && currTime.Sub(wsConn.lastRecvTime) >= port.keepalive {
-							wsConn.timeoutCheck = wsConn.lastRecvTime.UnixMilli()
-							// 發送Ping
-							frame := ws.NewPongFrame(NilPayload)
-							if err = ws.WriteHeader(wsConn, frame.Header); err != nil {
+					if wsConn.connState == Connected {
+						if wsConn.timeoutCheck > 0 {
+							currMilli = currTime.UnixMilli()
+							if currMilli > wsConn.timeoutCheck && currMilli-wsConn.timeoutCheck >= port.timeout {
+								err = errors.New("WebSocket: client timeout!!")
 								if port.publisher != nil {
-									port.publisher.Publish(flog.Error("ws.WriteHeader() err : %v", err))
+									port.publisher.Publish(flog.Error("WebSocket: client timeout!!"))
+								}
+							}
+						} else {
+							if currTime.After(wsConn.lastRecvTime) && currTime.Sub(wsConn.lastRecvTime) >= port.keepalive {
+								wsConn.timeoutCheck = wsConn.lastRecvTime.UnixMilli()
+								// 發送Ping
+								frame := ws.NewPongFrame(NilPayload)
+								if err = ws.WriteHeader(wsConn, frame.Header); err != nil {
+									if port.publisher != nil {
+										port.publisher.Publish(flog.Error("ws.WriteHeader() err : %v", err))
+									}
 								}
 							}
 						}
