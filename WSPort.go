@@ -224,11 +224,6 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 	var tWSConn *sWSConnection = nil
 	defer func() {
 		if err := recover(); err != nil {
-			// cs := fcb.SCallstack{}
-			// cs.GetCallstack(0, "")
-			// fmt.Println("Callstacks:")
-			// cs.Print()
-
 			// csp := fcb.SCallstack{}
 			// csp.GetCallstackWithPanic(0, "")
 			// fmt.Println("\nCallstacks(Panic):")
@@ -316,7 +311,7 @@ func (port *SWSPort) runAsWebSocket(conn net.Conn, u ws.Upgrader, fOnAccept FOnA
 				tWSConn.Close(err, nil)
 				return
 			}
-			if header.Fin {
+			if header.Fin { // 不是 Fin 的要組合起來，記得加上,close frame也要處理，也要補上發送close frame
 				tWSConn.timeoutCheck = 0
 				tWSConn.lastRecvTime = time.Now()
 				// 資料收完整才處理
